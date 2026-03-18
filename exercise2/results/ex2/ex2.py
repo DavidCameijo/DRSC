@@ -68,14 +68,11 @@ def main(seed_value, sim_time, num_apps, run, folder, dist_type="deterministic")
     t = Topology()
     t.G = nx.star_graph(7)
 
+    # Atributos da Topologia
     attIPT = {node: random.uniform(500, 1000) for node in t.G.nodes()}
-
     nx.set_node_attributes(t.G, name="IPT", values=attIPT)
-
-    # Assign heterogeneous Bandwidth and Propagation Delay
     attBW = {edge: random.uniform(0.5, 1) for edge in t.G.edges()}
     attPR = {edge: random.uniform(0.1, 0.5) for edge in t.G.edges()}
-    
     nx.set_edge_attributes(t.G, name="BW", values=attBW)
     nx.set_edge_attributes(t.G, name="PR", values=attPR)
 
@@ -83,68 +80,49 @@ def main(seed_value, sim_time, num_apps, run, folder, dist_type="deterministic")
     destination_nodes = [2, 4, 6]
     compute_nodes = [0, 0, 0]
 
-    # Create Applications, Population and Placement per application
-    apps = []
-    populations = []
-    placements = []
+    selectorPath = MinimumPath()
+    # Diferenciar o nome do ficheiro pelo tipo de distribuição
+    s = Sim(t, default_results_path=f"{folder}/sim_trace_ex2_3_{dist_type}")
 
+    # Ciclo ÚNICO para criar e fazer o deploy das apps
     for i in range(num_apps):
         app = create_application("App_" + str(i))
-        
-        # Create a population object for this specific app
         pop = Statical(name=f"Statical_App_{i}")
 
-        dist = deterministic_distribution(name=f"Det_{i}", time=5)
+        # Lógica da Atividade 2: Seleção da Distribuição
+        if dist_type == "deterministic":
+            dist = deterministic_distribution(name=f"Det_{i}", time=5)
+        elif dist_type == "exponential":
+            dist = exponential_distribution(name=f"Exp_{i}", lambd=0.2)
+        elif dist_type == "uniform":
+            # SOLUÇÃO: Usar INTEIROS (2 e 8) para evitar o TypeError no randint
+            dist = uniformDistribution(name=f"Uni_{i}", min=2, max=8)
         
         pop.set_sink_control({
             "id_node": destination_nodes[i], 
-            "number": 1, # We want exactly 1 sink
+            "number": 1, 
             "module": app.get_sink_modules()
         })
         
         pop.set_src_control({
             "id_node": source_nodes[i], 
-            "number": 1, # We want exactly 1 source generating messages
+            "number": 1, 
             "message": app.get_message("M.Action"), 
             "distribution": dist
         })
 
-        # Always a fixed node
         placement = FixedPlacement(
             target_nodes=[compute_nodes[i]], 
             module_names=["DataProcess"], 
             name=f"Place_App_{i}"
         )
         
-        apps.append(app)
-        populations.append(pop)
-        placements.append(placement)
-
-    # Minimum number of hops as a path
-    selectorPath = MinimumPath()
-
-    # Path dynamically names the CSV so runs don't overwrite each other
-    s = Sim(t, default_results_path=f"{folder}/sim_trace_ex2_3_seed_{seed_value}_run_{run}")
-
-    # Deploy applications in the simulator
-    for i in range(num_apps):
-        s.deploy_app2(apps[i], placements[i], populations[i], selectorPath)
-
-    for i in range(num_apps):
-        app = create_application("App_" + str(i))
-        pop = Statical(name=f"Statical_App_{i}")
-
-        if dist_type == "deterministic":
-            dist = deterministic_distribution(name=f"Det_{i}", time=5)
-        elif dist_type == "exponential":
-            dist = exponential_distribution(name=f"Exp_{i}", lambd=0.2)
-        elif dist_type == "uniform":
-            dist = uniformDistribution(name=f"Uni_{i}", min=2.0, max=8.0)
+        # Faz o deploy imediatamente após configurar cada app
+        s.deploy_app2(app, placement, pop, selectorPath)
     
-    print("Starting simulation...")
+    print(f"Starting simulation with {dist_type}...")
     s.run(sim_time)
     print("Simulation complete.")
-
 
 if __name__ == '__main__':
     sim_time = 1000
@@ -152,6 +130,5 @@ if __name__ == '__main__':
     num_runs = 1
     results_folder = '.'
 
-    for run in range(num_runs):
-        seed = 42
-        main(seed, sim_time, num_apps, run, results_folder)
+    for d in ["deterministic", "exponential", "uniform"]:
+        main(seed_value=42, sim_time=sim_time, num_apps=num_apps, run=0, folder=results_folder, dist_type=d)
