@@ -21,16 +21,15 @@ from utils import Statical, MinimumPath
 THRESHOLD = 1.0
 
 # Deterministic: Fixed inter-arrival time (in time units)
-# One message every 100 time units = 10 packets/second average
+# One message every 5 time units
 DIST_TIME = 5
 
 # Exponential Distribution (Poisson): Lambda parameter
-# lambda = 0.01 means mean inter-arrival time = 100 time units
-# This provides equivalent average traffic to DIST_TIME
+# lambda = 5 means mean inter-arrival time = 5 time units
 LAMBDA = 5
 
 # Uniform Distribution: Min and Max inter-arrival times
-# Mean = (50 + 150) / 2 = 100 time units (equivalent to DIST_TIME)
+# Mean = (1 + 10) / 2 = 5.5 time units
 # Provides bounded randomness around mean
 UNIFORM_MIN = 1
 UNIFORM_MAX = 10
@@ -96,21 +95,22 @@ def main(seed_value, sim_time, num_apps, distribution_type, run, folder):
     
     Traffic Generation Methods:
     ---------------------------
-    • "deterministic": Static traffic with fixed inter-arrival time (DIST_TIME = 100)
-                       - Produces one message every 100 time units
+    • "deterministic": Static traffic with fixed inter-arrival time (DIST_TIME = 5)
+                       - Produces one message every 5 time units
                        - Useful for benchmarking and reproducible tests
                        
-    • "exponential": Dynamic Poisson process (LAMBDA = 0.01)
+    • "exponential": Dynamic Poisson process (LAMBDA = 5)
                      - Random arrivals following exponential distribution
-                     - Mean inter-arrival time = 100 time units
+                     - Mean inter-arrival time = 0.2 time units
                      - Realistic model for real-world network traffic with variability
                      
-    • "uniform": Bounded random arrivals (UNIFORM_MIN=50, UNIFORM_MAX=150)
+    • "uniform": Bounded random arrivals (UNIFORM_MIN=1, UNIFORM_MAX=10)
                  - Inter-arrival times uniformly distributed
-                 - Mean inter-arrival time ≈ 100 time units
+                 - Mean inter-arrival time ≈ 5.5 time units
                  - Moderate variability with predictable bounds
+
     """
-    seed = random.seed(seed_value)
+    random.seed(seed_value)
     
     t = Topology()
     t.G = nx.star_graph(7)
@@ -144,7 +144,7 @@ def main(seed_value, sim_time, num_apps, distribution_type, run, folder):
         if distribution_type == "deterministic":
             dist = deterministic_distribution(name=f"Det_{i}", time=DIST_TIME)
         elif distribution_type == "exponential":
-            dist = exponential_distribution(name=f"Exp_{i}", lambd=LAMBDA, seed=seed)
+            dist = exponential_distribution(name=f"Exp_{i}", lambd=LAMBDA, seed=seed_value)
         elif distribution_type == "uniform":
             dist = uniformDistribution(name=f"Uni_{i}", min=UNIFORM_MIN, max=UNIFORM_MAX)
 
