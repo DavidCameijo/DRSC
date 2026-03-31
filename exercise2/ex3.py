@@ -77,7 +77,7 @@ def main(seed_value, sim_time, num_apps, run, folder, dist_type="deterministic")
         elif dist_type == "exponential":
             dist = exponential_distribution(name=f"Exp_{i}", lambd=0.2)
         elif dist_type == "uniform":
-            dist = uniformDistribution(name=f"Uni_{i}", min=2, max=8)
+            dist = uniformDistribution(name=f"Uni_{i}", min=UNIFORM_MIN, max=UNIFORM_MAX)
         elif dist_type == "poisson":
             dist = exponential_distribution(name=f"Poisson_{i}", lambd=0.2, seed=seed_value)  # Poisson approximation
 
