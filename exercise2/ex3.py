@@ -11,7 +11,7 @@ import os
 
 THRESHOLD = 1.0
 LAMBDA = 5
-UNIFORM_MIN = 2
+UNIFORM_MIN = 1
 UNIFORM_MAX = 10
 
 # Custom placement strategy to place specific modules on predefined target nodes
