@@ -10,6 +10,9 @@ from utils import Statical, MinimumPath
 import os
 
 THRESHOLD = 1.0
+LAMBDA = 5
+UNIFORM_MIN = 2
+UNIFORM_MAX = 10
 
 # Custom placement strategy to place specific modules on predefined target nodes
 class FixedPlacement(Placement):
@@ -76,7 +79,7 @@ def main(seed_value, sim_time, num_apps, run, folder, dist_type="deterministic")
         elif dist_type == "uniform":
             dist = uniformDistribution(name=f"Uni_{i}", min=2, max=8)
         elif dist_type == "poisson":
-            dist = exponential_distribution(name=f"Poisson_{i}", lambd=0.2)  # Poisson approximation
+            dist = exponential_distribution(name=f"Poisson_{i}", lambd=0.2, seed=seed_value)  # Poisson approximation
 
         # Define where the Sink (Actuator) and Source (Generator) will be physically placed in the topology
         pop.set_sink_control({"id_node": destination_nodes[i], "number": 1, "module": app.get_sink_modules()})
