@@ -1,7 +1,10 @@
 """
-    This is the most simple scenario with a basic topology, some users and a set of apps with only one service.
+    Intermediate Phase - DSRC Project
+    Barabasi-Albert topology (50 nodes), 5 applications, 
+    MinimizeExecutionTime placement + MinimizeLatency routing,
+    Exponential distribution (lambd=4), seed=42.
 
-    @author: Isaac Lera
+    @author: Isaac Lera (modified)
 """
 import os
 import time
@@ -26,11 +29,21 @@ from yafs.distribution import deterministic_distribution, exponential_distributi
 from yafs.placement import Placement
 from yafs.selection import Selection
 
+# Sink node assigned to each app (nodes 39-43, within the 39-48 sink range)
+APP_SINK_NODES = {
+    "App0": 39,
+    "App1": 40,
+    "App2": 41,
+    "App3": 42,
+    "App4": 43
+}
+
 class MinimizeExecutionTimePlacement(Placement):
     def __init__(self, name, **kwargs):
         super(MinimizeExecutionTimePlacement, self).__init__(name, **kwargs)
 
     def initial_allocation(self, sim, app_name):
+        # Find the node with the highest IPT (Cloud node 49)
         best_compute_node = None
         max_ipt = -1
         for node in sim.topology.G.nodes():
@@ -38,29 +51,32 @@ class MinimizeExecutionTimePlacement(Placement):
             if ipt > max_ipt:
                 max_ipt = ipt
                 best_compute_node = node
-        
-        sink_node = 39
+
+        # Each app gets its own dedicated sink node
+        sink_node = APP_SINK_NODES.get(app_name, 39)
+
         app = sim.apps[app_name]
         for module in app.services:
             if module == "Sink":
-                # Mandatory: Sinks go to nodes 39-48
+                # Sinks go to their designated node (39-43)
                 sim.deploy_module(app_name, module, app.services[module], [sink_node])
             elif module == "Source":
-                # Sources are handled by the deploy_source call, 
-                # but we can deploy a dummy here if needed
-                continue 
+                # Sources are handled by deploy_source
+                continue
             else:
-                # COMP modules go to the fastest node (Cloud)
+                # COMP modules go to the fastest node (Cloud, node 49)
                 sim.deploy_module(app_name, module, app.services[module], [best_compute_node])
+
+
 class MinimizeLatencyRouting(Selection):
     def get_path(self, sim, app_name, message, topology_src, alloc_DES, alloc_module, traffic, from_des):
         node_src = topology_src
         DES_dst = alloc_module[app_name][message.dst]
-        
+
         best_path = []
         best_des = None
         min_latency = 1000000000
-        
+
         for des in DES_dst:
             node_dst = alloc_DES[des]
             try:
@@ -73,7 +89,7 @@ class MinimizeLatencyRouting(Selection):
                     best_des = des
             except nx.NetworkXNoPath:
                 continue
-                
+
         if best_path:
             return [best_path], [best_des]
         return [], []
@@ -85,89 +101,92 @@ class MinimizeLatencyRouting(Selection):
         node_src = message.path[idx]
         path, des = self.get_path(sim, message.app_name, message, node_src, alloc_DES, alloc_module, traffic, from_des)
         if len(path) > 0 and len(path[0]) > 0:
-            concPath = message.path[0 : message.path.index(path[0][0])] + path[0]
+            concPath = message.path[0:message.path.index(path[0][0])] + path[0]
             return [concPath], des
         return [], []
 
-def main(stop_time, it,folder_results):
+
+def main(stop_time, it, folder_results):
 
     """
     TOPOLOGY
     """
     t = Topology()
 
-    # You also can create a topology using JSONs files. Check out examples folder
+    # Barabasi-Albert graph: 50 nodes, m=1 for ~49 edges (closest to spec's 25-edge target)
     size = 50
-    t.G = nx.generators.barabasi_albert_graph(size, m=2) # In NX-lib there are a lot of Graphs generators
+    t.G = nx.generators.barabasi_albert_graph(size, m=1, seed=42)
 
-    # Definition of mandatory attributes of a Topology
-    ## Attr. on edges
-    #PR = 2
-    #BW = 75000
+    # Edge attributes
     attPR = {x: 2 for x in t.G.edges()}
     attBW = {x: 75000 for x in t.G.edges()}
     nx.set_edge_attributes(t.G, name="PR", values=attPR)
     nx.set_edge_attributes(t.G, name="BW", values=attBW)
-    ## Attr. on nodes
+
+    # Node attributes
     attIPT = {}
     attRAM = {}
     for x in t.G.nodes():
         if 0 <= x <= 4:
+            # GW nodes - no compute capability
             attIPT[x] = 0
             attRAM[x] = 0
         elif 5 <= x <= 48:
+            # Fog nodes (39-48 are sink-eligible)
             attRAM[x] = 8192
             attIPT[x] = 1000
         elif x == 49:
+            # Cloud node - effectively infinite resources
             attIPT[x] = 1000000000
             attRAM[x] = 1000000000
-            
+
     nx.set_node_attributes(t.G, name="IPT", values=attIPT)
     nx.set_node_attributes(t.G, name="RAM", values=attRAM)
 
-    nx.write_gexf(t.G,folder_results+"graph_binomial_tree_%i.gexf"%size) # you can export the Graph in multiples format to view in tools like Gephi, and so on.
+    nx.write_gexf(t.G, folder_results + "graph_binomial_tree_%i.gexf" % size)
+    print(t.G.nodes())
 
-    print(t.G.nodes()) # nodes id can be str or int
-
-    # Plotting the graph
-    pos=nx.spring_layout(t.G)
+    # Plot the topology
+    pos = nx.spring_layout(t.G, seed=42)
     nx.draw_networkx(t.G, pos, with_labels=True)
-    nx.draw_networkx_edge_labels(t.G, pos,alpha=0.5,font_size=5,verticalalignment="top")
+    nx.draw_networkx_edge_labels(t.G, pos, alpha=0.5, font_size=5, verticalalignment="top")
     plt.axis('off')
+    plt.savefig(folder_results + "topology.png")
     plt.show()
 
     """
-    APPLICATION or SERVICES
+    APPLICATIONS
     """
     data_folder = os.path.join(os.path.dirname(__file__), 'data')
     dataApp = json.load(open(os.path.join(data_folder, 'appDefinition3.json')))
     apps = create_applications_from_json(dataApp)
     for name, app in apps.items():
-        print(f"App carregada: {name}")
-        print(f"Mensagens disponíveis: {app.messages.keys()}")
+        print(f"App loaded: {name}")
+        print(f"Available messages: {list(app.messages.keys())}")
+
     """
-    SERVICE PLACEMENT 
+    PLACEMENT
     """
     placement = MinimizeExecutionTimePlacement(name="Placement")
 
     """
-    Defining ROUTING algorithm to define how path messages in the topology among modules
+    ROUTING
     """
     selectorPath = MinimizeLatencyRouting()
 
     """
     SIMULATION ENGINE
     """
-    s = Sim(t, default_results_path=folder_results+"sim_trace")
+    s = Sim(t, default_results_path=folder_results + "sim_trace")
 
     """
-    Deploy services == APP's modules
+    Deploy apps
     """
     for aName in apps.keys():
-        s.deploy_app(apps[aName], placement, selectorPath) # Note: each app can have a different routing algorithm
+        s.deploy_app(apps[aName], placement, selectorPath)
 
     """
-    Deploy users
+    Deploy users (one source per GW node, one per app)
     """
     userJSON = json.load(open(os.path.join(data_folder, 'usersDefinition2.json')))
     for user in userJSON["sources"]:
@@ -179,13 +198,13 @@ def main(stop_time, it,folder_results):
             dist = exponential_distribution(name="Exp", lambd=4)
             s.deploy_source(app_name, id_node=node, msg=msg, distribution=dist)
         else:
-            print(f"Erro: Aplicação {app_name} não encontrada no simulador!")
+            print(f"Error: App {app_name} not found in simulator!")
 
     """
-    RUNNING - last step
+    RUN
     """
     logging.info(" Performing simulation: %i " % it)
-    s.run(stop_time)  # To test deployments put test_initial_deploy a TRUE
+    s.run(stop_time)
     s.print_debug_assignaments()
 
 
@@ -195,45 +214,42 @@ if __name__ == '__main__':
 
     folder_results = Path("results/")
     folder_results.mkdir(parents=True, exist_ok=True)
-    folder_results = str(folder_results)+"/"
+    folder_results = str(folder_results) + "/"
 
-    simulationDuration = 20000  
+    simulationDuration = 20000
 
-    # Iteration for each experiment changing the seed of randoms
     random.seed(42)
     logging.info("Running experiment it: - %i" % 42)
 
     start_time = time.time()
-    main(stop_time=simulationDuration,
-        it=0,folder_results=folder_results)
+    main(stop_time=simulationDuration, it=0, folder_results=folder_results)
 
     print("\n--- %s seconds ---" % (time.time() - start_time))
-
     print("Simulation Done!")
-  
-    # Analysing the results. 
-    dfl = pd.read_csv(folder_results+"sim_trace"+"_link.csv")
-    print("Number of total messages between nodes: %i"%len(dfl))
 
-    df = pd.read_csv(folder_results+"sim_trace.csv")
-    print("Number of requests handled by deployed services: %i"%len(df))
-
-    dfapp2 = df[df.app == 2].copy() # a new df with the requests handled by app 2
-    print(dfapp2.head())
-    
-    dfapp2.loc[:,"transmission_time"] = dfapp2.time_emit - dfapp2.time_reception # Transmission time
-    dfapp2.loc[:,"service_time"] = dfapp2.time_out - dfapp2.time_in
-
-    print("The average service time of app2 is: %0.3f "%dfapp2["service_time"].mean())
-
-    print("The app2 is deployed in the folling nodes: %s"%np.unique(dfapp2["TOPO.dst"]))
-    print("The number of instances of App2 deployed is: %s"%np.unique(dfapp2["DES.dst"]))
-    
     # -----------------------
-    # PLOTTING AND EVALUATION METRICS
+    # RESULTS ANALYSIS
+    # -----------------------
+    dfl = pd.read_csv(folder_results + "sim_trace" + "_link.csv")
+    print("Number of total messages between nodes: %i" % len(dfl))
+
+    df = pd.read_csv(folder_results + "sim_trace.csv")
+    print("Number of requests handled by deployed services: %i" % len(df))
+
+    # Per-app breakdown example (App2)
+    dfapp2 = df[df.app == 2].copy()
+    print(dfapp2.head())
+    dfapp2.loc[:, "transmission_time"] = dfapp2.time_emit - dfapp2.time_reception
+    dfapp2.loc[:, "service_time"] = dfapp2.time_out - dfapp2.time_in
+    print("Average service time of App2: %0.3f " % dfapp2["service_time"].mean())
+    print("App2 deployed on nodes: %s" % np.unique(dfapp2["TOPO.dst"]))
+    print("Number of App2 instances: %s" % np.unique(dfapp2["DES.dst"]))
+
+    # -----------------------
+    # EVALUATION METRICS PLOTS
     # -----------------------
     print("\n--- Generating Evaluation Metrics Plots ---")
-    
+
     # 1. Average latency per application
     df['total_latency'] = df['time_out'] - df['time_emit']
     avg_latency = df.groupby('app')['total_latency'].mean()
@@ -241,45 +257,42 @@ if __name__ == '__main__':
     avg_latency.plot(kind='bar', title='Average Latency per Application', ylabel='Latency (ms)')
     plt.tight_layout()
     plt.savefig(folder_results + "avg_latency_per_app.png")
-    
-    # 2. Physical link and node usage
+
+    # 2. Physical link usage
     plt.figure()
     link_usage = dfl.groupby(['src', 'dst']).size()
-    if len(link_usage) > 20: 
+    if len(link_usage) > 20:
         link_usage.sort_values(ascending=False).head(20).plot(kind='bar', title='Top 20 Physical Links Usage', ylabel='Messages')
     else:
         link_usage.plot(kind='bar', title='Physical Link Usage', ylabel='Messages')
     plt.tight_layout()
     plt.savefig(folder_results + "link_usage.png")
 
+    # 3. Node usage
     plt.figure()
     node_usage = df.groupby('TOPO.dst').size()
     node_usage.plot(kind='bar', title='Node Usage (Task Allocations)', ylabel='Tasks Processed')
     plt.tight_layout()
     plt.savefig(folder_results + "node_usage.png")
-    
-    # 3. Bandwidth, CPU, and RAM consumption per application
+
+    # 4. Bandwidth consumption per application
     plt.figure()
     if 'size' in dfl.columns:
         bw_app = dfl.groupby('app')['size'].sum()
         bw_app.plot(kind='bar', title='Bandwidth Consumption per App', ylabel='Total Bytes')
     else:
-        # Fallback to message counts if size is unavailable
         dfl.groupby('app').size().plot(kind='bar', title='Bandwidth (Message Counts) per App', ylabel='Total Messages')
     plt.tight_layout()
     plt.savefig(folder_results + "bandwidth_per_app.png")
-    
+
+    # 5. CPU consumption per application
     plt.figure()
     if 'inst' in df.columns:
         cpu_app = df.groupby('app')['inst'].sum()
         cpu_app.plot(kind='bar', title='CPU (Instructions) Consumption per App', ylabel='Total Instructions')
     else:
-        # Fallback to request counts
         df.groupby('app').size().plot(kind='bar', title='CPU proxy (Requests) per App', ylabel='Total Requests')
     plt.tight_layout()
     plt.savefig(folder_results + "cpu_per_app.png")
 
-    # Assuming RAM is correlated to message sizes/requests in this simulation context.
-    # Note: Dedicated RAM calculation would depend on initial app deployment specs.
-    
     plt.show()
