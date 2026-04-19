@@ -1,0 +1,9 @@
+{
+  "sources": [
+    {"id_resource": 0, "app": "CloudApp", "message": "M.User"},
+    {"id_resource": 1, "app": "CloudApp", "message": "M.User"},
+    {"id_resource": 2, "app": "CloudApp", "message": "M.User"},
+    {"id_resource": 3, "app": "CloudApp", "message": "M.User"},
+    {"id_resource": 4, "app": "CloudApp", "message": "M.User"}
+  ]
+}
