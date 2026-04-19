@@ -160,9 +160,6 @@ def main(stop_time, it, folder_results):
     data_folder = os.path.join(os.path.dirname(__file__), 'data')
     dataApp = json.load(open(os.path.join(data_folder, 'appDefinition3.json')))
     apps = create_applications_from_json(dataApp)
-    for name, app in apps.items():
-        print(f"App loaded: {name}")
-        print(f"Available messages: {list(app.messages.keys())}")
 
     """
     PLACEMENT

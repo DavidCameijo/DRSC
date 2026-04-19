@@ -1,9 +1,9 @@
 {
   "sources": [
-    {"id_resource": 0, "app": "CloudApp", "message": "M.User"},
-    {"id_resource": 1, "app": "CloudApp", "message": "M.User"},
-    {"id_resource": 2, "app": "CloudApp", "message": "M.User"},
-    {"id_resource": 3, "app": "CloudApp", "message": "M.User"},
-    {"id_resource": 4, "app": "CloudApp", "message": "M.User"}
+    {"id_resource": 0, "app": "App0", "message": "M.User"},
+    {"id_resource": 1, "app": "App1", "message": "M.User"},
+    {"id_resource": 2, "app": "App2", "message": "M.User"},
+    {"id_resource": 3, "app": "App3", "message": "M.User"},
+    {"id_resource": 4, "app": "App4", "message": "M.User"}
   ]
 }
