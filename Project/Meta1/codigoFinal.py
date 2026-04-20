@@ -27,13 +27,13 @@ from yafs.distribution import exponential_distribution
 from yafs.placement import Placement
 from yafs.selection import Selection
 
-# Sink node assigned to each app (nodes 39-43, within the 39-48 sink range)
+# Sink node assigned to each app (nodes 39-48 sink range, 2 per app)
 APP_SINK_NODES = {
-    "App0": 39,
-    "App1": 40,
-    "App2": 41,
-    "App3": 42,
-    "App4": 43
+    "App0": [39, 40],
+    "App1": [41, 42],
+    "App2": [43, 44],
+    "App3": [45, 46],
+    "App4": [47, 48],
 }
 
 class MinimizeExecutionTimePlacement(Placement):
@@ -71,7 +71,7 @@ class MinimizeLatencyRouting(Selection):
 
         best_path = []
         best_des = None
-        min_latency = float('inf')
+        min_latency = 1000000000 
 
         for des in DES_dst:
             node_dst = alloc_DES[des]
@@ -110,7 +110,7 @@ def main(stop_time, it, folder_results):
 
     # Barabasi-Albert: 50 nodes, m=2 as per spec (seed=42 for reproducibility)
     size = 50
-    t.G = nx.generators.barabasi_albert_graph(size, m=2, seed=42)
+    t.G = nx.generators.barabasi_albert_graph(size, m=25, seed=42)
 
     # Edge attributes: PR=2, BW=75000
     attPR = {x: 2 for x in t.G.edges()}
@@ -145,9 +145,26 @@ def main(stop_time, it, folder_results):
     # Plot the topology
     pos = nx.spring_layout(t.G, seed=42)
     plt.figure(figsize=(12, 8))
-    nx.draw_networkx(t.G, pos, with_labels=True, node_size=300, font_size=7)
+    
+    node_colors = []
+    app_colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0']
+    for x in t.G.nodes():
+        if 0 <= x <= 4:
+            # Source nodes (each app has one)
+            node_colors.append(app_colors[x])
+        elif 39 <= x <= 43:
+            # Sink nodes (each app has one)
+            node_colors.append(app_colors[x - 39])
+        elif x == 49:
+            # Cloud node
+            node_colors.append('gold')
+        else:
+            # Regular fog nodes
+            node_colors.append('darkgray')
+
+    nx.draw_networkx(t.G, pos, with_labels=True, node_color=node_colors, node_size=300, font_size=7)
     plt.axis('off')
-    plt.title("Barabasi-Albert Topology (50 nodes, m=2)")
+    plt.title("Barabasi-Albert Topology (50 nodes, m=25)")
     plt.tight_layout()
     plt.savefig(folder_results + "topology.png")
     plt.close()
