@@ -1,0 +1,97 @@
+[
+  {
+    "id": 0,
+    "name": "App0",
+    "module": [
+      {"id": 1, "name": "Source", "type": "SOURCE", "RAM": 0},
+      {"id": 2, "name": "COMP1", "type": "MODULE", "RAM": 1024},
+      {"id": 3, "name": "COMP2", "type": "MODULE", "RAM": 1024},
+      {"id": 4, "name": "Sink", "type": "SINK", "RAM": 0}
+    ],
+    "message": [
+      {"id": 0, "name": "M.User",   "s": "None", "d": "COMP1", "instructions": 200, "bytes": 15000},
+      {"id": 1, "name": "M.Step2",  "s": "COMP1", "d": "COMP2", "instructions": 200, "bytes": 15000},
+      {"id": 2, "name": "M.Result", "s": "COMP2", "d": "Sink",  "instructions": 0,   "bytes": 15000}
+    ],
+    "transmission": [
+      {"module": "COMP1", "message_in": "M.User",  "message_out": "M.Step2"},
+      {"module": "COMP2", "message_in": "M.Step2", "message_out": "M.Result"}
+    ]
+  },
+  {
+    "id": 1,
+    "name": "App1",
+    "module": [
+      {"id": 1, "name": "Source", "type": "SOURCE", "RAM": 0},
+      {"id": 2, "name": "COMP1", "type": "MODULE", "RAM": 1024},
+      {"id": 3, "name": "COMP2", "type": "MODULE", "RAM": 1024},
+      {"id": 4, "name": "Sink", "type": "SINK", "RAM": 0}
+    ],
+    "message": [
+      {"id": 0, "name": "M.User",   "s": "None", "d": "COMP1", "instructions": 200, "bytes": 15000},
+      {"id": 1, "name": "M.Step2",  "s": "COMP1", "d": "COMP2", "instructions": 200, "bytes": 15000},
+      {"id": 2, "name": "M.Result", "s": "COMP2", "d": "Sink",  "instructions": 0,   "bytes": 15000}
+    ],
+    "transmission": [
+      {"module": "COMP1", "message_in": "M.User",  "message_out": "M.Step2"},
+      {"module": "COMP2", "message_in": "M.Step2", "message_out": "M.Result"}
+    ]
+  },
+  {
+    "id": 2,
+    "name": "App2",
+    "module": [
+      {"id": 1, "name": "Source", "type": "SOURCE", "RAM": 0},
+      {"id": 2, "name": "COMP1", "type": "MODULE", "RAM": 1024},
+      {"id": 3, "name": "COMP2", "type": "MODULE", "RAM": 1024},
+      {"id": 4, "name": "Sink", "type": "SINK", "RAM": 0}
+    ],
+    "message": [
+      {"id": 0, "name": "M.User",   "s": "None", "d": "COMP1", "instructions": 200, "bytes": 15000},
+      {"id": 1, "name": "M.Step2",  "s": "COMP1", "d": "COMP2", "instructions": 200, "bytes": 15000},
+      {"id": 2, "name": "M.Result", "s": "COMP2", "d": "Sink",  "instructions": 0,   "bytes": 15000}
+    ],
+    "transmission": [
+      {"module": "COMP1", "message_in": "M.User",  "message_out": "M.Step2"},
+      {"module": "COMP2", "message_in": "M.Step2", "message_out": "M.Result"}
+    ]
+  },
+  {
+    "id": 3,
+    "name": "App3",
+    "module": [
+      {"id": 1, "name": "Source", "type": "SOURCE", "RAM": 0},
+      {"id": 2, "name": "COMP1", "type": "MODULE", "RAM": 1024},
+      {"id": 3, "name": "COMP2", "type": "MODULE", "RAM": 1024},
+      {"id": 4, "name": "Sink", "type": "SINK", "RAM": 0}
+    ],
+    "message": [
+      {"id": 0, "name": "M.User",   "s": "None", "d": "COMP1", "instructions": 200, "bytes": 15000},
+      {"id": 1, "name": "M.Step2",  "s": "COMP1", "d": "COMP2", "instructions": 200, "bytes": 15000},
+      {"id": 2, "name": "M.Result", "s": "COMP2", "d": "Sink",  "instructions": 0,   "bytes": 15000}
+    ],
+    "transmission": [
+      {"module": "COMP1", "message_in": "M.User",  "message_out": "M.Step2"},
+      {"module": "COMP2", "message_in": "M.Step2", "message_out": "M.Result"}
+    ]
+  },
+  {
+    "id": 4,
+    "name": "App4",
+    "module": [
+      {"id": 1, "name": "Source", "type": "SOURCE", "RAM": 0},
+      {"id": 2, "name": "COMP1", "type": "MODULE", "RAM": 1024},
+      {"id": 3, "name": "COMP2", "type": "MODULE", "RAM": 1024},
+      {"id": 4, "name": "Sink", "type": "SINK", "RAM": 0}
+    ],
+    "message": [
+      {"id": 0, "name": "M.User",   "s": "None", "d": "COMP1", "instructions": 200, "bytes": 15000},
+      {"id": 1, "name": "M.Step2",  "s": "COMP1", "d": "COMP2", "instructions": 200, "bytes": 15000},
+      {"id": 2, "name": "M.Result", "s": "COMP2", "d": "Sink",  "instructions": 0,   "bytes": 15000}
+    ],
+    "transmission": [
+      {"module": "COMP1", "message_in": "M.User",  "message_out": "M.Step2"},
+      {"module": "COMP2", "message_in": "M.Step2", "message_out": "M.Result"}
+    ]
+  }
+]
