@@ -47,11 +47,11 @@ APP_SRC_NODES = {
 }
 
 APP_SINK_NODES = {
-    "App0": {"Sink1": 39, "Sink2": 40},
-    "App1": {"Sink1": 41, "Sink2": 42},
-    "App2": {"Sink1": 43, "Sink2": 44},
-    "App3": {"Sink1": 45, "Sink2": 46},
-    "App4": {"Sink1": 47, "Sink2": 48},
+    "App0": [39, 40],
+    "App1": [41, 42],
+    "App2": [43, 44],
+    "App3": [45, 46],
+    "App4": [47, 48],
 }
 
 
@@ -307,6 +307,33 @@ def inject_failure(sim, target_node, fail_time):
 # TOPOLOGY BUILDERS
 # =============================================================================
 
+
+def build_topology_meta1(seed=42):
+    """
+    Topology 1: Barabási-Albert (50 nodes, m=25)
+    Dense scale-free graph — same as intermediate phase.
+    Used as baseline for comparison.
+    """
+    t = Topology()
+    size = 50
+    t.G = nx.barabasi_albert_graph(size, m=25, seed=seed)
+
+    nx.set_edge_attributes(t.G, name="PR", values={e: 2     for e in t.G.edges()})
+    nx.set_edge_attributes(t.G, name="BW", values={e: 75000 for e in t.G.edges()})
+
+    ipt, ram = {}, {}
+    for x in t.G.nodes():
+        if x <= 4:
+            ipt[x], ram[x] = 0, 0
+        elif x <= 48:
+            ipt[x], ram[x] = 1000, 8192
+        else:
+            ipt[x], ram[x] = 100000000, 1000000000
+
+    nx.set_node_attributes(t.G, name="IPT", values=ipt)
+    nx.set_node_attributes(t.G, name="RAM", values=ram)
+    return t
+
 def build_topology_1(seed=42):
     """
     Topology 1: TODO — choose a NetworkX generator and justify the choice.
@@ -330,26 +357,6 @@ def build_topology_1(seed=42):
     #     ...
     # nx.set_node_attributes(t.G, name="IPT", values=ipt)
     # nx.set_node_attributes(t.G, name="RAM", values=ram)
-
-    raise NotImplementedError
-    return t
-
-
-def build_topology_2(seed=42):
-    """
-    Topology 2: TODO — choose a different NetworkX generator.
-    Must differ structurally from Topology 1 (e.g. sparse vs. dense,
-    random vs. small-world, etc.)
-
-    Returns:
-        t (Topology): configured YAFS Topology object
-    """
-    t = Topology()
-
-    # TODO: generate graph, e.g.:
-    # t.G = nx.watts_strogatz_graph(n=50, k=6, p=0.3, seed=seed)
-
-    # TODO: set edge and node attributes
 
     raise NotImplementedError
     return t
