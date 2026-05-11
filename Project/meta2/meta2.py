@@ -4,10 +4,10 @@
     Uniform + Exponential distributions, complex app patterns, network failure.
 
     Topologies:
-        - Topology 1: TODO - choose and justify
-        - Topology 2: TODO - choose and justify
+        - Topology 1: barabasi_albert - used the one from the intermediate phase as a baseline for comparison.
+        - Topology 2: grid_2d_graph - used a 7x7 grid graph for the second topology.
 
-    Authors: TODO
+    Authors: David Cameijo Pinheiro, Guilherme Fernandes Rodrigues
 """
 
 import os
@@ -29,7 +29,7 @@ import numpy as np
 from yafs.core import Sim
 from yafs.application import create_applications_from_json
 from yafs.topology import Topology
-from yafs.distribution import exponential_distribution, uniform_distribution
+from yafs.distribution import exponential_distribution, uniformDistribution
 from yafs.placement import Placement
 from yafs.selection import Selection
 
@@ -47,12 +47,32 @@ APP_SRC_NODES = {
 }
 
 APP_SINK_NODES = {
-    "App0": [39, 40],
-    "App1": [41, 42],
-    "App2": [43, 44],
-    "App3": [45, 46],
-    "App4": [47, 48],
+    "App0": {"Sink1": 39, "Sink2": 40},
+    "App1": {"Sink1": 41, "Sink2": 42},
+    "App2": {"Sink1": 43, "Sink2": 44},
+    "App3": {"Sink1": 45, "Sink2": 46},
+    "App4": {"Sink1": 47, "Sink2": 48},
 }
+
+
+def get_protected_nodes():
+    """Nodes reserved for pure user sources/sinks in static wiring."""
+    sources = set(APP_SRC_NODES.values())
+    sinks = set()
+    for app_sinks in APP_SINK_NODES.values():
+        sinks.update(app_sinks.values())
+    return sources.union(sinks)
+
+
+def get_compute_nodes(topology, exclude_protected=True):
+    """Return nodes that can execute modules safely (IPT > 0 and RAM > 0)."""
+    protected = get_protected_nodes() if exclude_protected else set()
+    return [
+        n for n in topology.nodes()
+        if n not in protected
+        and topology.nodes[n].get('IPT', 0) > 0
+        and topology.nodes[n].get('RAM', 0) > 0
+    ]
 
 
 # =============================================================================
@@ -71,16 +91,20 @@ class MinimizeLatencyRouting(Selection):
         best_path, best_des, min_lat = [], None, float('inf')
 
         for des in DES_dst:
+            if des not in alloc_DES:
+                continue
+
             node_dst = alloc_DES[des]
             try:
                 lat = nx.shortest_path_length(
                     sim.topology.G, source=node_src, target=node_dst, weight='PR')
+                
                 if lat < min_lat:
                     min_lat = lat
                     best_path = nx.shortest_path(
                         sim.topology.G, source=node_src, target=node_dst, weight='PR')
                     best_des = des
-            except nx.NetworkXNoPath:
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
                 continue
 
         return ([best_path], [best_des]) if best_path else ([], [])
@@ -94,7 +118,9 @@ class MinimizeLatencyRouting(Selection):
         path, des = self.get_path(sim, message.app_name, message, node_src,
                                   alloc_DES, alloc_module, traffic, from_des)
         if path and path[0]:
-            concat = message.path[:idx] + path[0]
+            concat = message.path[:message.path.index(path[0][0])] + path[0]
+            # Force YAFS to restart hop indexing from the new rerouted path.
+            message.dst_int = -1
             return [concat], des
         return [], []
 
@@ -132,7 +158,7 @@ class MaximizeBandwidthRouting(Selection):
                     best_path = nx.shortest_path(
                         sim.topology.G, source=node_src, target=node_dst, weight='inv_BW')
                     best_des = des
-            except nx.NetworkXNoPath:
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
                 continue
 
         return ([best_path], [best_des]) if best_path else ([], [])
@@ -150,6 +176,8 @@ class MaximizeBandwidthRouting(Selection):
                                   alloc_DES, alloc_module, traffic, from_des)
         if path and path[0]:
             concat = message.path[:idx] + path[0]
+            # Force YAFS to restart hop indexing from the new rerouted path.
+            message.dst_int = -1
             return [concat], des
         return [], []
 
@@ -172,9 +200,12 @@ class RandomPathRouting(Selection):
 
         
         try: 
-            paths = list(nx.all_simple_paths(sim.topology.G, source= topology_src, target=node_dst, cutoff=8))
-            path = random.choice(paths)
-            return ([path],[des])
+            for u,v, d in sim.topology.G.edges(data=True):
+                d['rand_weigth'] = random.random()
+
+            path = nx.shortest_path(sim.topology.G, source=topology_src, target=node_dst, weight='rand_weigth')
+            return [path], [des]
+        
         except (IndexError, nx.NetworkXNoPath, nx.NodeNotFound):
             return [], []
 
@@ -189,9 +220,10 @@ class RandomPathRouting(Selection):
         
         if path and path[0]:
             concat = message.path[:idx] + path[0]
+            # Force YAFS to restart hop indexing from the new rerouted path.
+            message.dst_int = -1
             return [concat],des
         return [], []
-    
 
 
 # =============================================================================
@@ -222,13 +254,15 @@ class MinimizeResourceUsagePlacement(Placement):
         super().__init__(name, **kwargs)
 
     def initial_allocation(self, sim, app_name):
-        best_compute_node = min(
-            sim.topology.G.nodes(),
-            key=lambda n: sim.topology.G.nodes[n].get('CPU_usage', 0) + sim.topology.G.nodes[n].get('RAM_usage', 0)
-        )
         app = sim.apps[app_name]
-        for module in app.services:
-            sim.deploy_module(app_name, module, app.services[module], [best_compute_node])
+        topology = sim.topology.G
+        
+        fog_nodes = [n for n in topology.nodes() if 5 <= n <= 47]
+
+        for service_name in app.services:
+            if "Source" not in service_name and "Sink" not in service_name:
+                best_node = max(fog_nodes, key=lambda n: topology.nodes[n].get('RAM', 0))
+                sim.deploy_module(app_name, service_name, app.services[service_name], [best_node])
 
 
 class RandomNodePlacement(Placement):
@@ -241,7 +275,13 @@ class RandomNodePlacement(Placement):
         super().__init__(name, **kwargs)
 
     def initial_allocation(self, sim, app_name):
-        nodes = list(sim.topology.G.nodes())
+        nodes = get_compute_nodes(sim.topology.G, exclude_protected=True)
+        if not nodes:
+            # Last-resort fallback for custom topologies.
+            nodes = get_compute_nodes(sim.topology.G, exclude_protected=False)
+        if not nodes:
+            raise RuntimeError("No valid compute nodes available for RandomNodePlacement")
+
         app = sim.apps[app_name]
         for module in app.services:
             chosen_node = random.choice(nodes)
@@ -257,8 +297,7 @@ class CloudPlacement(Placement):
         application = sim.apps[app_name]
         for module in application.services:
             if module not in ["Source", "Sink"]:
-                self.set_initial_allocation(sim, app_name, module, cloud_node)
-
+                self.deploy_module(app_name, module, application.services[module], [cloud_node])
 class EdgePlacement(Placement):
     """
     Places each module on an edge node.
@@ -274,11 +313,11 @@ class EdgePlacement(Placement):
                 placed = False
                 for node in nodes_by_proximity:
                     if node != 49 and topology.nodes[node].get('RAM', 0) > 100:
-                        self.set_initial_allocation(sim, app_name, module, node)
+                        self.initial_allocation(sim, app_name, module, node)
                         placed = True
                         break
                 if not placed:
-                    self.set_initial_allocation(sim, app_name, module, 49)  # Fallback to cloud if no edge node has enough RAM
+                    self.initial_allocation(sim, app_name, module, 49)  # Fallback to cloud if no edge node has enough RAM
                 
 
 # =============================================================================
@@ -295,18 +334,53 @@ def inject_failure(sim, target_node, fail_time):
         target_node: node ID to remove (pick a high-degree hub for impact)
         fail_time:   simulation time at which failure occurs
     """
-    # TODO: implement
-    # Hint:
-    #   yield sim.env.timeout(fail_time)
-    #   sim.topology.G.remove_node(target_node)
-    #   logging.info(f"[FAILURE] Node {target_node} removed at t={fail_time}")
-    raise NotImplementedError
+    yield sim.env.timeout(fail_time)
+    if target_node not in sim.topology.G:
+        logging.warning(
+            f"[FAILURE SKIPPED] Node {target_node} does not exist at t={fail_time}"
+        )
+        return
+    sim.topology.G.remove_node(target_node)
+    logging.info(f"[FAILURE] Node {target_node} removed at t={fail_time}")
+
+
+def select_failure_node(topology, fixed_node=None):
+    """
+    Selects a valid failure node for the given topology.
+
+    If fixed_node is provided but unavailable in this topology, it falls back to
+    a valid candidate and logs a warning.
+    """
+    protected_nodes = get_protected_nodes()
+
+    if fixed_node is not None:
+        if fixed_node in topology.G and fixed_node not in protected_nodes:
+            return fixed_node
+        logging.warning(
+            f"[FAILURE NODE INVALID] Requested node {fixed_node} is not valid for this topology. "
+            "Selecting a fallback node."
+        )
+
+    # Prefer non-protected, compute-capable nodes.
+    candidate_nodes = [
+        n for n in topology.G.nodes()
+        if n not in protected_nodes and topology.G.nodes[n].get('RAM', 0) > 0
+    ]
+
+    if candidate_nodes:
+        # Prefer lower-degree nodes to reduce rerouting shock in highly dynamic policies.
+        return min(candidate_nodes, key=lambda n: topology.G.degree(n))
+
+    remaining = [n for n in topology.G.nodes() if n not in protected_nodes]
+    if remaining:
+        return min(remaining, key=lambda n: topology.G.degree(n))
+
+    raise RuntimeError("No valid node available to inject failure in this topology")
 
 
 # =============================================================================
 # TOPOLOGY BUILDERS
 # =============================================================================
-
 
 def build_topology_meta1(seed=42):
     """
@@ -334,9 +408,9 @@ def build_topology_meta1(seed=42):
     nx.set_node_attributes(t.G, name="RAM", values=ram)
     return t
 
-def build_topology_1(seed=42):
+def build_topology_2(seed=42):
     """
-    Topology 1: TODO — choose a NetworkX generator and justify the choice.
+    Topology 2: Grid graph (7x7) as we have 49 nodes
     Assign IPT, RAM, PR, BW attributes to nodes/edges.
 
     Returns:
@@ -344,21 +418,23 @@ def build_topology_1(seed=42):
     """
     t = Topology()
 
-    # TODO: generate graph, e.g.:
-    # t.G = nx.erdos_renyi_graph(n=50, p=0.1, seed=seed)
+    t.G = nx.grid_2d_graph(7, 7)
 
-    # TODO: set edge attributes (PR, BW)
-    # nx.set_edge_attributes(t.G, name="PR", values={e: ? for e in t.G.edges()})
-    # nx.set_edge_attributes(t.G, name="BW", values={e: ? for e in t.G.edges()})
+    t.G = nx.convert_node_labels_to_integers(t.G)
 
-    # TODO: set node attributes (IPT, RAM) per node role
-    # ipt, ram = {}, {}
-    # for n in t.G.nodes():
-    #     ...
-    # nx.set_node_attributes(t.G, name="IPT", values=ipt)
-    # nx.set_node_attributes(t.G, name="RAM", values=ram)
+    nx.set_edge_attributes(t.G, name="PR", values={e: 2 for e in t.G.edges()})
+    nx.set_edge_attributes(t.G, name="BW", values={e: 75000 for e in t.G.edges()})
 
-    raise NotImplementedError
+    for n in t.G.nodes():
+        if n <= 4:
+            t.G.nodes[n]['IPT'] = 0
+            t.G.nodes[n]['RAM'] = 0
+        elif n == 48:
+            t.G.nodes[n]['IPT'] = 1000000
+            t.G.nodes[n]['RAM'] = 1000000
+        else:
+            t.G.nodes[n]['IPT'] = 1000
+            t.G.nodes[n]['RAM'] = 8192
     return t
 
 
@@ -399,7 +475,6 @@ def load_applications(data_folder):
     For the final phase, define complex app patterns (fork/join, parallel
     branches) in the JSON files — not just linear COMP1 -> COMP2 chains.
     """
-    # TODO: update JSON filename(s) to match your final app definitions
     dataApp = json.load(open(os.path.join(data_folder, 'appDefinition_final.json')))
     apps = create_applications_from_json(dataApp)
     for name, app in apps.items():
@@ -424,7 +499,7 @@ def get_distribution(dist_type, app_name, lambd=4, low=1, high=5):
     if dist_type == 'exponential':
         return exponential_distribution(name=f"Exp_{app_name}", lambd=lambd)
     elif dist_type == 'uniform':
-        return uniform_distribution(name=f"Uni_{app_name}", min=low, max=high)
+        return uniformDistribution(name=f"Uni_{app_name}", min=low, max=high)
     else:
         raise ValueError(f"Unknown distribution type: {dist_type}")
 
@@ -465,18 +540,16 @@ def run_simulation(topology, apps, placement_cls, routing_cls,
         dist = get_distribution(dist_type, aName)
         s.deploy_source(aName, id_node=APP_SRC_NODES[aName], msg=msg, distribution=dist)
 
-        for sink_module in s.apps[aName].get_sink_modules():
-            s.deploy_sink(aName, node=APP_SINK_NODES[aName], module=sink_module)
-
-        print(f"[OK] {aName}: src={APP_SRC_NODES[aName]}, "
-              f"sink={APP_SINK_NODES[aName]}, dist={dist_type}")
+        sinks_map = APP_SINK_NODES.get(aName, {})
+        for sink_module, node_id in sinks_map.items():
+            s.deploy_sink(aName, node=node_id, module=sink_module)
+            print(f"[OK] {aName}: src={APP_SRC_NODES[aName]}, "
+            f"sink={APP_SINK_NODES[aName]}, dist={dist_type}")
 
     # Inject failure
     if inject_node_failure:
-        if failure_node is None:
-            # Default: remove the highest-degree node (biggest hub)
-            failure_node = max(topology.G.nodes(), key=lambda n: topology.G.degree(n))
-        s.env.process(inject_failure(s, failure_node, failure_time))
+        failure_node = select_failure_node(topology, fixed_node=failure_node)
+        s.env.process(inject_failure(s, failure_node, failure_time))    
         print(f"[FAILURE SCHEDULED] Node {failure_node} will fail at t={failure_time}")
 
     s.run(stop_time)
@@ -618,7 +691,7 @@ def main():
     # ------------------------------------------------------------------
     # Build topologies
     # ------------------------------------------------------------------
-    topo1 = build_topology_1(seed=42)
+    topo1 = build_topology_meta1(seed=42)
     topo2 = build_topology_2(seed=42)
     plot_topology(topo1.G, folder_results, "topo1")
     plot_topology(topo2.G, folder_results, "topo2")
@@ -635,21 +708,23 @@ def main():
     # ------------------------------------------------------------------
     experiments = [
         # --- Topology 1 ---
-        (topo1, "topo1", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "exponential"),
-        (topo1, "topo1", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "uniform"),
-        (topo1, "topo1", MinimizeExecutionTimePlacement, MaximizeBandwidthRouting,  "exponential"),
-        (topo1, "topo1", MinimizeResourceUsagePlacement, MinimizeLatencyRouting,    "exponential"),
-        (topo1, "topo1", RandomNodePlacement,            RandomPathRouting,         "exponential"),
+        (build_topology_meta1, "topo1", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "exponential"),
+        (build_topology_meta1, "topo1", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "uniform"),
+        (build_topology_meta1, "topo1", MinimizeExecutionTimePlacement, MaximizeBandwidthRouting,  "exponential"),
+        (build_topology_meta1, "topo1", MinimizeResourceUsagePlacement, MinimizeLatencyRouting,    "exponential"),
+        (build_topology_meta1, "topo1", RandomNodePlacement,            RandomPathRouting,         "exponential"),
         # --- Topology 2 ---
-        (topo2, "topo2", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "exponential"),
-        (topo2, "topo2", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "uniform"),
-        (topo2, "topo2", MinimizeExecutionTimePlacement, MaximizeBandwidthRouting,  "exponential"),
-        (topo2, "topo2", MinimizeResourceUsagePlacement, MinimizeLatencyRouting,    "exponential"),
-        (topo2, "topo2", RandomNodePlacement,            RandomPathRouting,         "exponential"),
+        (build_topology_2, "topo2", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "exponential"),
+        (build_topology_2, "topo2", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "uniform"),
+        (build_topology_2, "topo2", MinimizeExecutionTimePlacement, MaximizeBandwidthRouting,  "exponential"),
+        (build_topology_2, "topo2", MinimizeResourceUsagePlacement, MinimizeLatencyRouting,    "exponential"),
+        (build_topology_2, "topo2", RandomNodePlacement,            RandomPathRouting,         "exponential"),
         # TODO: add more combinations as needed
     ]
 
-    for i, (topo, topo_label, placement_cls, routing_cls, dist_type) in enumerate(experiments):
+    for i, (topo_func, topo_label, placement_cls, routing_cls, dist_type) in enumerate(experiments):
+        
+
         exp_label = f"{topo_label}_{placement_cls.__name__}_{routing_cls.__name__}_{dist_type}"
         exp_folder = folder_results + exp_label + "/"
         Path(exp_folder).mkdir(parents=True, exist_ok=True)
@@ -658,10 +733,12 @@ def main():
         print(f"Experiment {i+1}/{len(experiments)}: {exp_label}")
         print(f"{'='*60}")
 
+        current_topo = topo_func() # Rebuild topology for each experiment to reset state
+
         start = time.time()
 
         run_simulation(
-            topology=topo,
+            topology=current_topo,
             apps=apps,
             placement_cls=placement_cls,
             routing_cls=routing_cls,
@@ -671,7 +748,6 @@ def main():
             inject_node_failure=True,
             failure_time=10000,   # fail midway through the simulation
         )
-
         generate_plots(exp_folder)
         print(f"[DONE] Experiment {i+1} completed in {time.time()-start:.1f}s")
 
