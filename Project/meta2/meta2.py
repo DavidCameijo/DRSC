@@ -29,7 +29,7 @@ import numpy as np
 from yafs.core import Sim
 from yafs.application import create_applications_from_json
 from yafs.topology import Topology
-from yafs.distribution import exponential_distribution, uniformDistribution
+from yafs.distribution import deterministicDistributionStartPoint, exponential_distribution, uniformDistribution
 from yafs.placement import Placement
 from yafs.selection import Selection
 
@@ -80,6 +80,10 @@ def get_compute_nodes(topology, exclude_protected=True):
 # =============================================================================
 
 class MinimizeLatencyRouting(Selection):
+    """
+    Selects the path with the lowest total processing latency (PR) from source to destination.
+    Uses Dijkstra's algorithm via networkx's shortest_path functions.
+    """
     def get_path(self, sim, app_name, message, topology_src,
                  alloc_DES, alloc_module, traffic, from_des):
         node_src = topology_src
@@ -119,7 +123,6 @@ class MinimizeLatencyRouting(Selection):
                                   alloc_DES, alloc_module, traffic, from_des)
         if path and path[0]:
             concat = message.path[:message.path.index(path[0][0])] + path[0]
-            # Force YAFS to restart hop indexing from the new rerouted path.
             message.dst_int = -1
             return [concat], des
         return [], []
@@ -176,7 +179,6 @@ class MaximizeBandwidthRouting(Selection):
                                   alloc_DES, alloc_module, traffic, from_des)
         if path and path[0]:
             concat = message.path[:idx] + path[0]
-            # Force YAFS to restart hop indexing from the new rerouted path.
             message.dst_int = -1
             return [concat], des
         return [], []
@@ -220,7 +222,6 @@ class RandomPathRouting(Selection):
         
         if path and path[0]:
             concat = message.path[:idx] + path[0]
-            # Force YAFS to restart hop indexing from the new rerouted path.
             message.dst_int = -1
             return [concat],des
         return [], []
@@ -277,7 +278,6 @@ class RandomNodePlacement(Placement):
     def initial_allocation(self, sim, app_name):
         nodes = get_compute_nodes(sim.topology.G, exclude_protected=True)
         if not nodes:
-            # Last-resort fallback for custom topologies.
             nodes = get_compute_nodes(sim.topology.G, exclude_protected=False)
         if not nodes:
             raise RuntimeError("No valid compute nodes available for RandomNodePlacement")
@@ -323,25 +323,25 @@ class EdgePlacement(Placement):
 # =============================================================================
 # NETWORK FAILURE
 # =============================================================================
+"""
+Class used in Exercise2 to generate a link failure at a specific time interval.
+"""
+class LinkFailure():
+    def __init__(self, target_time, target_node):
+        self.target_time = target_time
+        self.target_node = target_node
+        self.triggered = False
 
-def inject_failure(sim, target_node, fail_time):
-    """
-    Removes a node (and all its links) from the topology at fail_time.
-    Registered as a SimPy process before s.run().
-
-    Args:
-        sim:         the Sim instance
-        target_node: node ID to remove (pick a high-degree hub for impact)
-        fail_time:   simulation time at which failure occurs
-    """
-    yield sim.env.timeout(fail_time)
-    if target_node not in sim.topology.G:
-        logging.warning(
-            f"[FAILURE SKIPPED] Node {target_node} does not exist at t={fail_time}"
-        )
-        return
-    sim.topology.G.remove_node(target_node)
-    logging.info(f"[FAILURE] Node {target_node} removed at t={fail_time}")
+    def __call__(self, sim, routing):
+        if sim.env.now >= self.target_time and not self.triggered:
+            if self.target_node in sim.topology.G:
+                sim.topology.G.remove_node(self.target_node)
+                
+                routing.invalid_cache_value = True
+            else:
+                pass
+            
+            self.triggered = True
 
 
 def select_failure_node(topology, fixed_node=None):
@@ -549,7 +549,12 @@ def run_simulation(topology, apps, placement_cls, routing_cls,
     # Inject failure
     if inject_node_failure:
         failure_node = select_failure_node(topology, fixed_node=failure_node)
-        s.env.process(inject_failure(s, failure_node, failure_time))    
+
+        dist_fail = deterministicDistributionStartPoint(failure_time, failure_time/2.0, name="DeterministicFailure")
+        evol_fail = LinkFailure(target_time=failure_time, target_node=failure_node)
+
+        s.deploy_monitor("NodeFailureTopology", evol_fail, dist_fail, **{"sim": s, "routing": selectorPath})
+
         print(f"[FAILURE SCHEDULED] Node {failure_node} will fail at t={failure_time}")
 
     s.run(stop_time)
@@ -713,13 +718,13 @@ def main():
         (build_topology_meta1, "topo1", MinimizeExecutionTimePlacement, MaximizeBandwidthRouting,  "exponential"),
         (build_topology_meta1, "topo1", MinimizeResourceUsagePlacement, MinimizeLatencyRouting,    "exponential"),
         (build_topology_meta1, "topo1", RandomNodePlacement,            RandomPathRouting,         "exponential"),
-        # --- Topology 2 ---
+        #~ --- Topology 2 ---
         (build_topology_2, "topo2", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "exponential"),
         (build_topology_2, "topo2", MinimizeExecutionTimePlacement, MinimizeLatencyRouting,    "uniform"),
         (build_topology_2, "topo2", MinimizeExecutionTimePlacement, MaximizeBandwidthRouting,  "exponential"),
         (build_topology_2, "topo2", MinimizeResourceUsagePlacement, MinimizeLatencyRouting,    "exponential"),
         (build_topology_2, "topo2", RandomNodePlacement,            RandomPathRouting,         "exponential"),
-        # TODO: add more combinations as needed
+        
     ]
 
     for i, (topo_func, topo_label, placement_cls, routing_cls, dist_type) in enumerate(experiments):
@@ -733,7 +738,7 @@ def main():
         print(f"Experiment {i+1}/{len(experiments)}: {exp_label}")
         print(f"{'='*60}")
 
-        current_topo = topo_func() # Rebuild topology for each experiment to reset state
+        current_topo = topo_func()
 
         start = time.time()
 
@@ -746,7 +751,7 @@ def main():
             stop_time=STOP_TIME,
             folder_results=exp_folder,
             inject_node_failure=True,
-            failure_time=10000,   # fail midway through the simulation
+            failure_time=10000,  
         )
         generate_plots(exp_folder)
         print(f"[DONE] Experiment {i+1} completed in {time.time()-start:.1f}s")
